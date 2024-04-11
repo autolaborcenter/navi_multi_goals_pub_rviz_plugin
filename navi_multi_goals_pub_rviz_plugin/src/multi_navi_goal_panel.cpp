@@ -77,7 +77,7 @@ namespace navi_multi_goals_pub_rviz_plugin {
         connect(output_startNavi_button_, SIGNAL(clicked()), this, SLOT(startNavi()));
         connect(cycle_checkbox_, SIGNAL(clicked(bool)), this, SLOT(checkCycle()));
         connect(output_timer, SIGNAL(timeout()), this, SLOT(startSpin()));
-
+        tableConnect = connect(poseArray_table_,  SIGNAL(itemChanged(QTableWidgetItem*)), this, SLOT(editPose(QTableWidgetItem *))); 
 
     }
 
@@ -112,10 +112,11 @@ namespace navi_multi_goals_pub_rviz_plugin {
         permit_ = false, cycle_ = false;
         poseArray_table_->clear();
         pose_array_.poses.clear();
+        pose_stamped_array_.clear();
         deleteMark();
         poseArray_table_->setRowCount(maxNumGoal_);
         poseArray_table_->setColumnCount(3);
-        poseArray_table_->setEditTriggers(QAbstractItemView::NoEditTriggers);
+        poseArray_table_->setEditTriggers(QAbstractItemView::CurrentChanged);
         poseArray_table_->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
         QStringList pose_header;
         pose_header << "x" << "y" << "yaw";
@@ -145,17 +146,57 @@ namespace navi_multi_goals_pub_rviz_plugin {
     void MultiNaviGoalsPanel::goalCntCB(const geometry_msgs::PoseStamped::ConstPtr &pose) {
         if (pose_array_.poses.size() < maxNumGoal_) {
             pose_array_.poses.push_back(pose->pose);
+            pose_stamped_array_.push_back(pose);
             pose_array_.header.frame_id = pose->header.frame_id;
             writePose(pose->pose);
-            markPose(pose);
+            markPose(pose, pose_array_.poses.size());
         } else {
             ROS_ERROR("Beyond the maximum number of goals: %d", maxNumGoal_);
         }
     }
 
+    void MultiNaviGoalsPanel::editPose(QTableWidgetItem *item) {
+        // 获取单元格所在的行号
+        int row = item->row();
+
+        // 获取单元格所在的列号（如果也需要的话）
+        int column = item->column();
+        geometry_msgs::PoseStamped::ConstPtr stamped_pose = pose_stamped_array_[row];
+        geometry_msgs::PoseStampedPtr mutablePoseStampedPtr = boost::const_pointer_cast<geometry_msgs::PoseStamped>(stamped_pose); 
+        bool ok = false;
+        double num = item->text().toDouble(&ok);
+        if (!ok) {
+            ROS_ERROR("failed to convert %s to double!", item->text().toStdString().data());
+            return;
+        }
+        switch (column)
+        {
+        case 0:
+            mutablePoseStampedPtr->pose.position.x = num;
+            pose_array_.poses[row].position.x = num;
+            break;
+        case 1:
+            mutablePoseStampedPtr->pose.position.y = num;
+            pose_array_.poses[row].position.y = num;
+            break;
+        default:
+            mutablePoseStampedPtr->pose.orientation = tf::createQuaternionMsgFromYaw(num * 3.14 / 180.0);
+            pose_array_.poses[row].orientation = tf::createQuaternionMsgFromYaw(num * 3.14 / 180.0);
+            break;
+        }
+        qDebug() << "x:" << stamped_pose->pose.position.x << ", y:" << stamped_pose->pose.position.y;
+        qDebug() << "--x:" << pose_array_.poses[row].position.x << ", y:" << pose_array_.poses[row].position.y;
+
+        deleteMark();
+
+        for (int i = 0; i < pose_array_.poses.size(); i++) {
+            markPose(pose_stamped_array_[i], i+1);
+        }
+    }
+
     // write the poses into the table
     void MultiNaviGoalsPanel::writePose(geometry_msgs::Pose pose) {
-
+        disconnect(tableConnect);
         poseArray_table_->setItem(pose_array_.poses.size() - 1, 0,
                                   new QTableWidgetItem(QString::number(pose.position.x, 'f', 2)));
         poseArray_table_->setItem(pose_array_.poses.size() - 1, 1,
@@ -163,11 +204,11 @@ namespace navi_multi_goals_pub_rviz_plugin {
         poseArray_table_->setItem(pose_array_.poses.size() - 1, 2,
                                   new QTableWidgetItem(
                                           QString::number(tf::getYaw(pose.orientation) * 180.0 / 3.14, 'f', 2)));
-
+        tableConnect = connect(poseArray_table_,  SIGNAL(itemChanged(QTableWidgetItem*)), this, SLOT(editPose(QTableWidgetItem *))); 
     }
 
     // when setting a Navi Goal, it will set a mark on the map
-    void MultiNaviGoalsPanel::markPose(const geometry_msgs::PoseStamped::ConstPtr &pose) {
+    void MultiNaviGoalsPanel::markPose(const geometry_msgs::PoseStamped::ConstPtr &pose, int idx) {
         if (ros::ok()) {
             visualization_msgs::Marker arrow;
             visualization_msgs::Marker number;
@@ -186,8 +227,8 @@ namespace navi_multi_goals_pub_rviz_plugin {
             arrow.color.g = number.color.g = 0.98f;
             arrow.color.b = number.color.b = 0.80f;
             arrow.color.a = number.color.a = 1.0;
-            arrow.id = number.id = pose_array_.poses.size();
-            number.text = std::to_string(pose_array_.poses.size());
+            arrow.id = number.id = idx;
+            number.text = std::to_string(idx);
             marker_pub_.publish(arrow);
             marker_pub_.publish(number);
         }
@@ -200,6 +241,8 @@ namespace navi_multi_goals_pub_rviz_plugin {
 
     // start to navigate, and only command the first goal
     void MultiNaviGoalsPanel::startNavi() {
+        poseArray_table_->setEditTriggers(QAbstractItemView::NoEditTriggers);
+        disconnect(tableConnect);
         curGoalIdx_ = curGoalIdx_ % pose_array_.poses.size();
         if (!pose_array_.poses.empty() && curGoalIdx_ < maxNumGoal_) {
             geometry_msgs::PoseStamped goal;
@@ -210,6 +253,7 @@ namespace navi_multi_goals_pub_rviz_plugin {
             poseArray_table_->item(curGoalIdx_, 0)->setBackgroundColor(QColor(255, 69, 0));
             poseArray_table_->item(curGoalIdx_, 1)->setBackgroundColor(QColor(255, 69, 0));
             poseArray_table_->item(curGoalIdx_, 2)->setBackgroundColor(QColor(255, 69, 0));
+            tableConnect = connect(poseArray_table_,  SIGNAL(itemChanged(QTableWidgetItem*)), this, SLOT(editPose(QTableWidgetItem *))); 
             curGoalIdx_ += 1;
             permit_ = true;
         } else {
@@ -231,7 +275,8 @@ namespace navi_multi_goals_pub_rviz_plugin {
             curGoalIdx_ += 1;
             permit_ = true;
         } else {
-            ROS_ERROR("All goals are completed");
+            ROS_INFO("All goals are completed");
+            poseArray_table_->setEditTriggers(QAbstractItemView::CurrentChanged);
             permit_ = false;
         }
     }
@@ -260,15 +305,16 @@ namespace navi_multi_goals_pub_rviz_plugin {
     void MultiNaviGoalsPanel::cancelNavi() {
         if (!cur_goalid_.id.empty()) {
             cancel_pub_.publish(cur_goalid_);
-            ROS_ERROR("Navigation have been canceled");
+            ROS_INFO("Navigation have been canceled");
+            poseArray_table_->setEditTriggers(QAbstractItemView::CurrentChanged);
         }
     }
 
     // call back for listening current state
     void MultiNaviGoalsPanel::statusCB(const actionlib_msgs::GoalStatusArray::ConstPtr &statuses) {
         bool arrived_pre = arrived_;
-        arrived_ = checkGoal(statuses->status_list);
-        if (arrived_) { ROS_ERROR("%d,%d", int(arrived_), int(arrived_pre)); }
+        arrived_ = checkGoal(statuses->status_list, arrived_pre);
+        // if (arrived_) { ROS_ERROR("%d,%d", int(arrived_), int(arrived_pre)); }
         if (arrived_ && arrived_ != arrived_pre && ros::ok() && permit_) {
             if (cycle_) cycleNavi();
             else completeNavi();
@@ -276,7 +322,7 @@ namespace navi_multi_goals_pub_rviz_plugin {
     }
 
     //check the current state of goal
-    bool MultiNaviGoalsPanel::checkGoal(std::vector<actionlib_msgs::GoalStatus> status_list) {
+    bool MultiNaviGoalsPanel::checkGoal(std::vector<actionlib_msgs::GoalStatus> status_list, bool arrived_pre) {
         bool done;
         if (!status_list.empty()) {
             for (auto &i : status_list) {
@@ -284,7 +330,9 @@ namespace navi_multi_goals_pub_rviz_plugin {
                     done = true;
                     ROS_INFO("completed Goal%d", curGoalIdx_);
                 } else if (i.status == 4) {
-                    ROS_ERROR("Goal%d is Invalid, Navi to Next Goal%d", curGoalIdx_, curGoalIdx_ + 1);
+                    if (!arrived_pre) {
+                        ROS_ERROR("Goal%d is Invalid, Navi to Next Goal%d", curGoalIdx_, curGoalIdx_ + 1);
+                    }
                     return true;
                 } else if (i.status == 0) {
                     done = true;

@@ -37,7 +37,7 @@ namespace navi_multi_goals_pub_rviz_plugin {
         void setMaxNumGoal(const QString &maxNumGoal);
 
         void writePose(geometry_msgs::Pose pose);
-        void markPose(const geometry_msgs::PoseStamped::ConstPtr &pose);
+        void markPose(const geometry_msgs::PoseStamped::ConstPtr &pose, int idx);
         void deleteMark();
 
     protected Q_SLOTS:
@@ -50,7 +50,7 @@ namespace navi_multi_goals_pub_rviz_plugin {
         void cancelNavi();
 
         void goalCntCB(const geometry_msgs::PoseStamped::ConstPtr &pose);  //goal count sub callback function
-
+        void editPose(QTableWidgetItem *item);
         void statusCB(const actionlib_msgs::GoalStatusArray::ConstPtr &statuses); //status sub callback function
 
         void checkCycle();
@@ -58,7 +58,7 @@ namespace navi_multi_goals_pub_rviz_plugin {
         void completeNavi();               //after the first pose, continue to navigate the rest of poses
         void cycleNavi();
 
-        bool checkGoal(std::vector<actionlib_msgs::GoalStatus> status_list);  // check whether arrived the goal
+        bool checkGoal(std::vector<actionlib_msgs::GoalStatus> status_list, bool arrived_pre);  // check whether arrived the goal
 
         static void startSpin(); // spin for sub
     protected:
@@ -79,9 +79,11 @@ namespace navi_multi_goals_pub_rviz_plugin {
         int curGoalIdx_ = 0, cycleCnt_ = 0;
         bool permit_ = false, cycle_ = false, arrived_ = false;
         geometry_msgs::PoseArray pose_array_;
+        std::vector<geometry_msgs::PoseStamped::ConstPtr> pose_stamped_array_;
 
         actionlib_msgs::GoalID cur_goalid_;
 
+        QMetaObject::Connection tableConnect;
 
     };
 
