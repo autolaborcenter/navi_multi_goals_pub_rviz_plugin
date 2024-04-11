@@ -58,7 +58,7 @@ namespace navi_multi_goals_pub_rviz_plugin {
         void completeNavi();               //after the first pose, continue to navigate the rest of poses
         void cycleNavi();
 
-        bool checkGoal(std::vector<actionlib_msgs::GoalStatus> status_list);  // check whether arrived the goal
+        bool checkGoal(std::vector<actionlib_msgs::GoalStatus> status_list, bool arrived_pre);  // check whether arrived the goal
 
         static void startSpin(); // spin for sub
     protected:

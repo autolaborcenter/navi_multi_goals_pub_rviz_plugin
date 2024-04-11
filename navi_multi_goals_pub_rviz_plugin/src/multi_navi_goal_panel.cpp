@@ -231,7 +231,7 @@ namespace navi_multi_goals_pub_rviz_plugin {
             curGoalIdx_ += 1;
             permit_ = true;
         } else {
-            ROS_ERROR("All goals are completed");
+            ROS_INFO("All goals are completed");
             permit_ = false;
         }
     }
@@ -260,15 +260,15 @@ namespace navi_multi_goals_pub_rviz_plugin {
     void MultiNaviGoalsPanel::cancelNavi() {
         if (!cur_goalid_.id.empty()) {
             cancel_pub_.publish(cur_goalid_);
-            ROS_ERROR("Navigation have been canceled");
+            ROS_INFO("Navigation have been canceled");
         }
     }
 
     // call back for listening current state
     void MultiNaviGoalsPanel::statusCB(const actionlib_msgs::GoalStatusArray::ConstPtr &statuses) {
         bool arrived_pre = arrived_;
-        arrived_ = checkGoal(statuses->status_list);
-        if (arrived_) { ROS_ERROR("%d,%d", int(arrived_), int(arrived_pre)); }
+        arrived_ = checkGoal(statuses->status_list, arrived_pre);
+        // if (arrived_) { ROS_ERROR("%d,%d", int(arrived_), int(arrived_pre)); }
         if (arrived_ && arrived_ != arrived_pre && ros::ok() && permit_) {
             if (cycle_) cycleNavi();
             else completeNavi();
@@ -276,7 +276,7 @@ namespace navi_multi_goals_pub_rviz_plugin {
     }
 
     //check the current state of goal
-    bool MultiNaviGoalsPanel::checkGoal(std::vector<actionlib_msgs::GoalStatus> status_list) {
+    bool MultiNaviGoalsPanel::checkGoal(std::vector<actionlib_msgs::GoalStatus> status_list, bool arrived_pre) {
         bool done;
         if (!status_list.empty()) {
             for (auto &i : status_list) {
@@ -284,7 +284,9 @@ namespace navi_multi_goals_pub_rviz_plugin {
                     done = true;
                     ROS_INFO("completed Goal%d", curGoalIdx_);
                 } else if (i.status == 4) {
+                    if (!arrived_pre) {
                     ROS_ERROR("Goal%d is Invalid, Navi to Next Goal%d", curGoalIdx_, curGoalIdx_ + 1);
+                    }
                     return true;
                 } else if (i.status == 0) {
                     done = true;
